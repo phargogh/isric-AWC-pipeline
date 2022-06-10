@@ -25,6 +25,10 @@ def calculate_awc(
 
     def _calculate():
         pass
+
+    # TODO: make this a COG
+    # TODO: be sure to compress the output raster
+    # TODO: build overviews as well before upload.
     pygeoprocessing.raster_calculator()
 
 
