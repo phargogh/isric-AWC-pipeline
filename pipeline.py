@@ -49,7 +49,7 @@ def main():
     # do an argparse interface.
     # create a graph of tasks
     # For each of the soils rasters:
-    #   Download the file (retry if needed)
+    #   If the file isn't available locally (and checksum fails), download the file (retry if needed)
     #   Verify the checksum of the file for integrity
     # When the files are all downloaded, check alignment of layers and run
     # raster_calculator.
