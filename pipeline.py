@@ -4,12 +4,11 @@ import http.client
 import logging
 import os
 import shutil
-import time
 
+import appdirs
 import numpy
 import pygeoprocessing
 import requests
-import taskgraph
 import urllib3.exceptions
 from osgeo import gdal
 
@@ -175,8 +174,6 @@ def calculate_awc(
         return awc
 
 
-    # TODO: make this a COG
-    # TODO: be sure to compress the output raster
     # TODO: build overviews as well before upload.
     # TODO: build in some warnings if the values are outside of the expected
     # range of 0-100 (or 0-1 if we've already divided by 100).
@@ -184,31 +181,46 @@ def calculate_awc(
     'TILED=YES', 'BIGTIFF=YES', 'COMPRESS=LZW',
     'BLOCKXSIZE=256', 'BLOCKYSIZE=256', 'PREDICTOR=1', 'NUM_THREADS=4'))
     raster_paths = [(path, 1) for path in rasters]
-    import pprint
-    pprint.pprint(raster_paths)
     pygeoprocessing.geoprocessing.raster_calculator(
         raster_paths, _calculate, target_awc_path,
         gdal.GDT_Float32, float(NODATA_FLOAT32))
 
 
 def main():
-    # do an argparse interface.
-    # create a graph of tasks
-    # For each of the soils rasters:
-    #   If the file isn't available locally (and checksum fails), download the file (retry if needed)
-    #   Verify the checksum of the file for integrity
-    # When the files are all downloaded, check alignment of layers and run
-    # raster_calculator.
-    #soil_rasters = [os.path.basename(val['url']) for val in
-    #                ISRIC_2017_WWP_RASTERS.values()]
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '--cache-dir', default=appdirs.user_cache_dir('isric-awc', 'natcap'))
+    parser.add_argument('target_awc')
+
+    parsed_args = parser.parse_args()
+
+    cache_dir = os.path.abspath(parsed_args.cache_dir)
+    if not os.path.exists(cache_dir):
+        os.mkdirs(cache_dir)
+
+    LOGGER.info(f"Looking for existing AWC rasters in {cache_dir}")
+
     local_soil_rasters = []
     for soil_raster_dict in ISRIC_2017_AWCH1_RASTERS.values():
-        local_file = os.path.basename(soil_raster_dict['url'])
+        local_file = os.path.join(
+            cache_dir, os.path.basename(soil_raster_dict['url']))
+        if not os.path.exists(local_file):
+            LOGGER.info(f"File not found: {local_file}")
+            fetch_raster(soil_raster_dict['url'], local_file, 'md5',
+                         soil_raster_dict['md5'])
+        else:
+            LOGGER.info(f"Verifying checksum on {local_file}")
+            if not _digest_file(local_file, 'md5') == soil_raster_dict['md5']:
+                raise AssertionError(
+                    "MD5sum for {local_file} did not match what's expected. "
+                    "Try deleting the file and re-running the program to "
+                    "re-download the file.")
         local_soil_rasters.append(local_file)
-        fetch_raster(soil_raster_dict['url'], local_file,
-                     'md5', soil_raster_dict['md5'])
-    return
-    calculate_awc(*local_soil_rasters, 'awc_frac.tif')
+
+    LOGGER.info(f"Calculating AWC to {parsed_args.target_awc}")
+    calculate_awc(*local_soil_rasters, parsed_args.target_awc)
+
+    LOGGER.info(f"AWC complete; written to {parsed_args.target_awc}")
 
 
 if __name__ == '__main__':
